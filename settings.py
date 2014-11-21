@@ -1,5 +1,5 @@
 file_server='127.0.0.1'
-file_server_port=6888
+file_server_port=6890
 db_host='localhost'
 db_user='root'
 db_passwd=''

@@ -11,6 +11,7 @@ import time
 import os
 import random
 import MySQLdb
+import shutil
 
 # Updated database for given file details
 def update_file_to_db(filename,filesize,timestamp,userid,mimetype):
@@ -53,7 +54,24 @@ def update_file_to_db(filename,filesize,timestamp,userid,mimetype):
         return fileid
 
 def remove_file_from_db(filename,userid):
-    print 'TODO'
+    db = MySQLdb.connect(host=settings.db_host, user=settings.db_user, passwd=settings.db_passwd,db=settings.db_db)
+    cursor = db.cursor()
+    #Execute SQL select statement
+    sql="SELECT id FROM assets where user_id='"+str(userid)+"'and uploaded_file_file_name='"+filename+"'"
+    cursor.execute(sql)
+    db.commit()
+    numrows=int(cursor.rowcount)
+    if numrows == 0 :
+	return "NotExist"
+    elif numrows > 1:
+	return "Multiple"
+    else:
+	row=cursor.fetchone()
+	sql="DELETE FROM assets where id="+str(row[0])
+	print sql
+	cursor.execute(sql)
+	db.commit()
+	return str(row[0])
 
 # Returns list of files to be sent back to client
 # Return Value:
@@ -97,7 +115,11 @@ def files_to_sync_back(response,userid):
 def clientthread(conn):
     reply = protocol.recv_one_message(conn)
     data = json.loads(reply)
+    
+    #Temporarily Bypassing auth server (do not have rails :/)
     userid = auth_server.authenticate(data['email'],data['password'])
+    #userid=1
+
     req_type = data["req_type"]
 
     if userid>0:
@@ -114,28 +136,34 @@ def clientthread(conn):
                 os.makedirs(directory)
             file_server_location=directory+filename_r
             protocol.recv_one_file(conn,file_server_location)
-        elif req_type == 'get_files':
-            print ''
+        elif req_type == 'pull':
+            print 'Pull Request Received'
             client_dir_parse_json = data['dir_parse_json']
             # Sync back files to client
-            # filename_list,id_list,file_size_list=files_to_sync_back(client_dir_parse_json,userid)
-            # print filename_list
-            # protocol.send_one_message(conn,str(len(filename_list)))        
-            # protocol.recv_one_message(conn)
-            # print('Recieve successful')
-            # protocol.send_one_message(conn, json.dumps({'filename_list' : filename_list,'filesize_list':file_size_list}))
+            filename_list,id_list,file_size_list=files_to_sync_back(client_dir_parse_json,userid)
+            print filename_list
+            protocol.send_one_message(conn,str(len(filename_list)))
+            protocol.send_one_message(conn, json.dumps({'filename_list' : filename_list,'filesize_list':file_size_list}))
             # file_location=''
-            # for x in range(0,len(filename_list)):
-            #     if (os.path.isfile(settings.server_files_folder+'/assets/'+str(id_list[x])+'/'+str(filename_list[x]))):
-            #         file_location=settings.server_files_folder+'/assets/'+str(id_list[x])+'/'+str(filename_list[x])
-            #         protocol.send_one_message(conn,'1')
-            #         protocol.send_one_file(conn,file_location)
-            #     else:
-            #         protocol.send_one_message(conn,'0')
-            #     protocol.recv_one_message(conn)
+            for x in range(0,len(filename_list)):
+                file_location=settings.server_files_folder+str(id_list[x])+'/'+str(filename_list[x])
+                if (os.path.isfile(file_location)):
+                    protocol.send_one_message(conn,'1')
+                    protocol.send_one_file(conn,file_location)
+                else:
+                    protocol.send_one_message(conn,'0')
         elif req_type == 'delete_file':
-            print 'TODO'
-        conn.close()
+            filename = data["filename"]
+            file_id = remove_file_from_db(filename,userid)
+            if file_id == "NotExist":
+                protocol.send_one_message(conn,"DoesNotExist")
+            elif file_id == "Multiple":
+                protocol.send_one_message(conn,"InternalError")
+            else:
+                directory=settings.server_files_folder+str(file_id)+'/'
+                print directory
+                shutil.rmtree(directory)
+                protocol.send_one_message(conn,'Success')
     else:
         protocol.send_one_message(conn,'0')
         conn.close()
