@@ -13,6 +13,26 @@ import random
 import MySQLdb
 import shutil
 
+# Returns folder name given folder id
+# Returns empty string if folder not present
+def folder_name(folder_id):
+    if folder_id == 0:
+        return ''
+    # Connect to MySQL Database
+    db = MySQLdb.connect(host=settings.db_host, user=settings.db_user, passwd=settings.db_passwd,db=settings.db_db)
+    cursor = db.cursor()
+    # Execute SQL select statement
+    sql="SELECT count(*),name FROM folders where id='"+str(folder_id)+"'"
+    cursor.execute(sql)
+    db.commit()
+    numrows = int(cursor.rowcount)
+    for x in range(0,numrows):
+        row = cursor.fetchone()
+        if(row[0]==0):
+            return ''
+        else:
+            return row[1]
+
 # Updated database for given file details
 def update_file_to_db(filename,filesize,timestamp,userid,mimetype):
     # Connect to MySQL Database
@@ -75,13 +95,14 @@ def remove_file_from_db(filename,userid):
 
 # Returns list of files to be sent back to client
 # Return Value:
-#   list_name,list_id,list_size
+#   list_name,list_id,list_size, list_folder
 def files_to_sync_back(response,userid):
     list_files=[]
     list_timestamp=[]
     list_name=[]
     list_id=[]
     list_size=[]
+    list_folder = []
     for i in response:
         list_files.append(i['filename'])
         list_timestamp.append(i['timestamp'])
@@ -89,7 +110,7 @@ def files_to_sync_back(response,userid):
     db = MySQLdb.connect(host=settings.db_host, user=settings.db_user, passwd=settings.db_passwd,db=settings.db_db)
     cursor = db.cursor()
     # execute SQL select statement
-    sql="SELECT uploaded_file_file_name,updated_at,id,uploaded_file_file_size FROM assets where user_id='"+str(userid)+"'"
+    sql="SELECT uploaded_file_file_name,updated_at,id,uploaded_file_file_size, folder_id FROM assets where user_id='"+str(userid)+"'"
     cursor.execute(sql)
     db.commit()
     numrows = int(cursor.rowcount)
@@ -104,11 +125,13 @@ def files_to_sync_back(response,userid):
                 list_name.append(row[0])
                 list_id.append(row[2])
                 list_size.append(row[3])
+                list_folder.append(folder_name(int(row[4] or 0)))
         except ValueError:
             list_name.append(row[0])
             list_id.append(row[2])
             list_size.append(row[3])
-    return list_name,list_id,list_size        
+            list_folder.append(folder_name(int(row[4] or 0)))
+    return list_name,list_id,list_size, list_folder
 
 
 # Thread for client connection
@@ -140,10 +163,11 @@ def clientthread(conn):
             print 'Pull Request Received'
             client_dir_parse_json = data['dir_parse_json']
             # Sync back files to client
-            filename_list,id_list,file_size_list=files_to_sync_back(client_dir_parse_json,userid)
+            filename_list,id_list,file_size_list, folder_list=files_to_sync_back(client_dir_parse_json,userid)
             print filename_list
+            print folder_list
             protocol.send_one_message(conn,str(len(filename_list)))
-            protocol.send_one_message(conn, json.dumps({'filename_list' : filename_list,'filesize_list':file_size_list}))
+            protocol.send_one_message(conn, json.dumps({'filename_list' : filename_list,'filesize_list':file_size_list, 'foldername_list':folder_list}))
             # file_location=''
             for x in range(0,len(filename_list)):
                 file_location=settings.server_files_folder+str(id_list[x])+'/'+str(filename_list[x])
