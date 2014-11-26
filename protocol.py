@@ -1,6 +1,8 @@
 import struct
 import os
 
+chunksize=8192
+
 # Protocol for sending a message independent of data Size
 # Sends message length (in 4 bytes) followed by message data
 def send_one_message(sock, data):
@@ -18,7 +20,6 @@ def send_one_file(sock,file_path):
     send_one_message(sock,str(length))
     f=open (file_path, "rb") 
     remain=int(length)
-    chunksize=1024
     while (remain>0):
         if (remain<chunksize):
             l = f.read(remain)
@@ -41,13 +42,12 @@ def recv_one_message(sock):
 def recv_one_file(sock,filename):
     filesize=recv_one_message(sock)
     open(filename, 'w').close()
-    chunksize=1024
-    remain=int(filesize)
-    while (remain>0):
-        l = recv_one_message(sock)
-        with open(filename, "a") as f:
+    with open(filename, "a") as f:
+        remain=int(filesize)
+        while (remain>0):
+            l = recv_one_message(sock)
             f.write(l)
-        remain=remain-chunksize
+            remain=remain-chunksize
 
 # Receives data
 # Input:
