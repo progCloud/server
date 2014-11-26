@@ -33,6 +33,23 @@ def folder_name(folder_id):
         else:
             return row[1]
 
+# Resurns the list of shared folders for user with id 'userid'
+def get_shared_folders_list(userid):
+    # Connect to MySQL Database
+    shared_folder_ids_list = []
+    db = MySQLdb.connect(host=settings.db_host, user=settings.db_user, passwd=settings.db_passwd,db=settings.db_db)
+    cursor = db.cursor()
+    # Execute SQL select statement
+    sql='SELECT count(*),folder_id FROM shared_folders where shared_user_id='+str(userid)
+    print sql
+    cursor.execute(sql)
+    db.commit()
+    numrows = int(cursor.rowcount)
+    for x in range(0,numrows):
+        row = cursor.fetchone()
+        shared_folder_ids_list.append(int(row[1]))
+    return shared_folder_ids_list
+
 # Updated database for given file details
 def update_file_to_db(filename,filesize,timestamp,userid,mimetype):
     # Connect to MySQL Database
@@ -97,28 +114,34 @@ def remove_file_from_db(filename,userid):
 # Return Value:
 #   list_name,list_id,list_size, list_folder
 def files_to_sync_back(response,userid):
-    list_files=[]
-    list_timestamp=[]
+    client_files_list=[]
+    client_timestamp_list=[]
     list_name=[]
     list_id=[]
     list_size=[]
     list_folder = []
     for i in response:
-        list_files.append(i['filename'])
-        list_timestamp.append(i['timestamp'])
+        client_files_list.append(i['filename'])
+        client_timestamp_list.append(i['timestamp'])
     # connect
     db = MySQLdb.connect(host=settings.db_host, user=settings.db_user, passwd=settings.db_passwd,db=settings.db_db)
     cursor = db.cursor()
     # execute SQL select statement
-    sql="SELECT uploaded_file_file_name,updated_at,id,uploaded_file_file_size, folder_id FROM assets where user_id='"+str(userid)+"'"
+    shared_folder_ids_list = get_shared_folders_list(userid)
+    placeholder= '?'
+    placeholders= ', '.join(placeholder for unused in shared_folder_ids_list)
+    print shared_folder_ids_list
+    sql='SELECT uploaded_file_file_name,updated_at,id,uploaded_file_file_size, folder_id FROM assets WHERE user_id='+str(userid)+' OR folder_id IN ( ' + ','.join(map(str, shared_folder_ids_list)) + ' )' #% str(tuple(shared_folder_ids_list))  #placeholders          # ' + ','.join(map(str, shared_folder_ids_list)) + '
+    print sql
     cursor.execute(sql)
     db.commit()
     numrows = int(cursor.rowcount)
     for x in range(0,numrows):
         row = cursor.fetchone()
+        print row[0]
         try:
             from datetime import datetime as dt
-            b=dt.strptime(str(list_timestamp[list_files.index(row[0])]), "%Y-%m-%d %H:%M:%S")
+            b=dt.strptime(str(client_timestamp_list[client_files_list.index(row[0])]), "%Y-%m-%d %H:%M:%S")
             a=dt.strptime(str(row[1]), "%Y-%m-%d %H:%M:%S")
             
             if (a!=b):
